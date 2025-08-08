@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Web OS v5 — Canvas‑safe</title>
+<link rel="icon" href="data:,"/>
+<style>
+:root{
+  --accent:#7c3aed; /* purple */
+  --accent-2:#5b21b6;
+  --fg:#e5e7eb; --fg-dim:#cbd5e1;
+  --taskbar:rgba(20,22,34,.92);
+  --border:rgba(255,255,255,.12);
+  --glass:rgba(255,255,255,.06);
+  --shadow:0 10px 30px rgba(0,0,0,.35);
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0; font:14px/1.4 system-ui,Segoe UI,Roboto,Ubuntu; color:var(--fg);
+  background: radial-gradient(1200px 800px at 90% 10%, #1a1039 0%, transparent 60%),
+              radial-gradient(900px 600px at 10% 90%, #082531 0%, transparent 60%),
+              linear-gradient(160deg,#0a0f1e,#060914 60%);
+  overflow:hidden; user-select:none;}
+
+/* Desktop area */
+#desktop{position:absolute; inset:0 0 48px 0;}
+
+/* Windows */
+.window{position:absolute; min-width:320px; min-height:200px; border:1px solid var(--border); border-radius:12px; overflow:hidden; background:linear-gradient(180deg,#151a2b,#0f1322); box-shadow:var(--shadow)}
+.window.hidden{display:none}
+.titlebar{height:40px; display:flex; align-items:center; justify-content:space-between; padding:0 6px 0 10px; background:linear-gradient(180deg,#1c2240,#12172e); border-bottom:1px solid var(--border)}
+.titlebar .title{display:flex; align-items:center; gap:8px; font-weight:600}
+.titlebar .title .dot{width:10px;height:10px;background:var(--accent);border-radius:50%;box-shadow:0 0 0 2px rgba(124,58,237,.25)}
+.titlebar .buttons{display:flex}
+.titlebar button{width:44px; height:32px; border:0; background:transparent; display:grid; place-items:center; cursor:pointer}
+.titlebar button svg{width:12px;height:12px;fill:#fff;opacity:.9}
+.titlebar button:hover{background:rgba(255,255,255,.06)}
+.titlebar button.close:hover{background:#e81123}
+.content{position:absolute; inset:41px 0 0 0}
+
+/* Generic toolbar */
+.toolbar{display:flex; gap:8px; padding:8px; background:var(--glass); border-bottom:1px solid var(--border)}
+.toolbar input[type="text"], .toolbar select{flex:1; min-width:120px; background:#0b1120; color:var(--fg); border:1px solid var(--border); border-radius:8px; padding:8px 10px}
+.toolbar button{background:var(--accent); border:0; color:#fff; border-radius:8px; padding:8px 12px; cursor:pointer}
+.toolbar button:hover{background:var(--accent-2)}
+
+/* Taskbar */
+#taskbar{position:absolute; left:0; right:0; bottom:0; height:48px; display:flex; align-items:center; gap:8px; padding:0 10px; background:var(--taskbar); border-top:1px solid var(--border); backdrop-filter:blur(10px)}
+#start{width:36px;height:36px;border-radius:9px;border:1px solid transparent;display:grid;place-items:center;cursor:pointer}
+#start:hover, #start.active{background:rgba(124,58,237,.15); border-color:var(--accent)}
+#start svg{width:18px;height:18px;fill:#fff}
+#task-search{height:36px; min-width:280px; flex:0 0 320px; display:flex; align-items:center; gap:8px; padding:0 10px; background:rgba(255,255,255,.06); border:1px solid var(--border); border-radius:9px}
+#task-search input{flex:1; background:transparent; border:0; outline:none; color:var(--fg)}
+#task-search svg{width:16px;height:16px;fill:#fff}
+#task-pins{display:flex; gap:6px}
+.pin-btn{width:36px;height:36px;border-radius:9px;border:1px solid transparent;background:rgba(255,255,255,.06);display:grid;place-items:center;cursor:pointer}
+.pin-btn:hover{background:rgba(255,255,255,.12)}
+.pin-btn svg{width:18px;height:18px;fill:#fff}
+#tray{display:flex;gap:6px;align-items:center}
+.tray-btn{width:32px;height:32px;border-radius:8px;border:1px solid transparent;background:rgba(255,255,255,.06);display:grid;place-items:center;cursor:pointer}
+.tray-btn:hover{background:rgba(255,255,255,.12)}
+.tray-btn svg{width:16px;height:16px;fill:#fff}
+#tasks{display:flex; gap:6px}
+.task-btn{height:36px; min-width:120px; max-width:220px; border-radius:9px; border:1px solid transparent; background:rgba(255,255,255,.05); color:#fff; display:flex; align-items:center; gap:8px; padding:0 10px}
+.task-btn.active{outline:2px solid rgba(255,255,255,.2)}
+.task-spacer{flex:1}
+#clock{min-width:76px; text-align:right; color:var(--fg-dim); font-weight:600; cursor:default}
+
+/* Start menu */
+#startmenu{position:absolute; left:10px; bottom:56px; width:560px; background:rgba(28,34,52,.95); border:1px solid var(--border); border-radius:14px; box-shadow:var(--shadow); padding:14px; display:none}
+#startmenu .grid{display:grid; grid-template-columns:repeat(6,1fr); gap:10px}
+.app-icon{height:64px; border-radius:12px; background:rgba(255,255,255,.06); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; cursor:pointer; border:1px solid var(--border)}
+.app-icon:hover{background:rgba(255,255,255,.1)}
+.app-icon svg{width:26px;height:26px;fill:#fff}
+.app-icon span{font-size:12px; color:#d1d5db}
+
+/* Apps */
+.app-iframe{width:100%; height:100%; border:0; background:#0b0e18}
+.notepad-text{width:100%; height:calc(100% - 48px); background:#0a0f1e; color:#e5e7eb; border:0; outline:none; resize:none; font:13px/1.5 Consolas, "Courier New", monospace; padding:12px; white-space:pre; overflow:auto}
+.files-list{padding:8px; height:calc(100% - 48px); overflow:auto}
+.file-row{display:flex; justify-content:space-between; padding:8px; border:1px solid var(--border); border-radius:8px; margin-bottom:6px}
+
+/* Tray popover + calendar */
+.popover{position:absolute; bottom:56px; right:10px; background:rgba(24,30,46,.95); border:1px solid var(--border); border-radius:12px; padding:12px; min-width:280px; display:none; box-shadow:var(--shadow)}
+.popover h4{margin:0 0 8px 0; font-size:13px; opacity:.8}
+.calendar{display:grid; grid-template-columns:repeat(7,1fr); gap:4px; font-size:12px}
+.calendar .day{opacity:.8; text-align:center}
+.calendar .cell{height:28px; display:grid; place-items:center; border-radius:6px; background:rgba(255,255,255,.04)}
+.calendar .cell.today{outline:2px solid var(--accent)}
+
+/* Toasts */
+#toasts{position:absolute; right:12px; bottom:60px; display:flex; flex-direction:column; gap:8px}
+.toast{background:rgba(34,40,62,.95); border:1px solid var(--border); padding:10px 12px; border-radius:10px; box-shadow:var(--shadow)}
+
+/* Auth / lock screen */
+#authOverlay{position:fixed; inset:0; background:rgba(0,0,0,.5); backdrop-filter:blur(12px); display:none; z-index:10000;}
+#authShell{position:absolute; inset:0; display:grid; grid-template-rows:1fr auto 1fr; place-items:center; color:#fff}
+#lockTime{font-size:64px; font-weight:700; text-shadow:0 8px 30px rgba(0,0,0,.45)}
+#lockDate{margin-top:6px; opacity:.85}
+#authCard{width:360px; padding:18px; border-radius:16px; border:1px solid var(--border); background:rgba(22,28,46,.85); box-shadow:var(--shadow)}
+#authCard h3{margin:0 0 8px 0}
+#authCard .row{display:flex; flex-direction:column; gap:6px; margin-bottom:10px}
+#authCard input{background:#0b1120; color:#fff; border:1px solid var(--border); border-radius:10px; padding:10px}
+#authCard button{background:var(--accent); color:#fff; border:0; border-radius:10px; padding:10px 12px; cursor:pointer}
+#authCard button.secondary{background:transparent; border:1px solid var(--border)}
+#authError{color:#ffb4b4; min-height:18px}
+#authActions{display:flex; gap:8px}
+</style>
+</head>
+<body>
+  <div id="authOverlay">
+    <div id="authShell">
+      <div></div>
+      <div style="text-align:center">
+        <div id="lockTime">--:--</div>
+        <div id="lockDate">—</div>
+      </div>
+      <div>
+        <div id="authCard">
+          <h3 id="authTitle">Sign in</h3>
+          <div class="row"><label>Username</label><input id="authUser" autocomplete="username"/></div>
+          <div class="row"><label>Password</label><input id="authPass" type="password" autocomplete="current-password"/></div>
+          <div id="authError"></div>
+          <div id="authActions">
+            <button id="authPrimary">Sign in</button>
+            <button id="authAlt" class="secondary">Create account</button>
+            <button id="authReset" class="secondary" title="Wipe all files & settings">Reset OS</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div id="desktop"></div>
+  <div id="startmenu"></div>
+  <div id="toasts"></div>
+  <div id="trayPopover" class="popover"></div>
+  <div id="taskbar">
+    <button id="start" title="Start">
+      <svg viewBox="0 0 24 24"><path d="M3 3h8v8H3V3zm10 0h8v8h-8V3zM3 13h8v8H3v-8zm10 0h8v8h-8v-8z"/></svg>
+    </button>
+    <div id="task-search" title="Search"><svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg> <input id="taskSearchInput" placeholder="Search apps & files"/></div>
+    <div id="task-pins"></div>
+    <div id="tasks"></div>
+    <div class="task-spacer"></div>
+    <div id="tray"><button id="tray-wifi" class="tray-btn" title="Network"></button><button id="tray-volume" class="tray-btn" title="Volume"></button><button id="tray-battery" class="tray-btn" title="Battery"></button></div>
+    <div id="clock">--:--</div>
+  </div>
+
+<script>
+// ===== Canvas-safe note =====
+// No external CDNs or icons; everything inline, so this runs inside ChatGPT Canvas.
+const DEFAULT_WALL = 'https://www.pixground.com/wp-content/uploads/2023/06/Windows-11-Dark-Purple-Abstract-Waves-4K-Wallpaper-2.jpg';
+const SYS = { volume: 1 };
+
+// ---------- Utilities ----------
+const AUTH = { userKey:'user', hashKey:'userHash', signedKey:'signedIn' };
+const desktop = document.getElementById('desktop');
+const startBtn = document.getElementById('start');
+const startMenu = document.getElementById('startmenu');
+const tasks = document.getElementById('tasks');
+const pinsRow = document.getElementById('task-pins');
+const taskbarHeight = 48;
+let zTop = 10;
+const windows = new Map();
+
+function tickClock(){ const d=new Date(); const h=String(d.getHours()).padStart(2,'0'); const m=String(d.getMinutes()).padStart(2,'0'); document.getElementById('clock').textContent=h+':'+m; }
+setInterval(tickClock, 10000); tickClock();
+
+function toast(msg, ms=2200){ const t=document.createElement('div'); t.className='toast'; t.textContent=msg; document.getElementById('toasts').appendChild(t); setTimeout(()=> t.remove(), ms); }
+
+// ---------- IndexedDB (offline FS) ----------
+const IDB = {
+  db:null,
+  open(){ return new Promise((res,rej)=>{ const r = indexedDB.open('webos.v5',1); r.onupgradeneeded = e=>{ const db=e.target.result; db.createObjectStore('files',{keyPath:'path'}); db.createObjectStore('settings',{keyPath:'key'}); }; r.onsuccess=()=>{ this.db=r.result; res(); }; r.onerror=()=>rej(r.error); }); },
+  put(store, value){ return new Promise((res,rej)=>{ const tx=this.db.transaction(store,'readwrite'); tx.objectStore(store).put(value); tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); }); },
+  get(store, key){ return new Promise((res,rej)=>{ const tx=this.db.transaction(store,'readonly'); const req=tx.objectStore(store).get(key); req.onsuccess=()=>res(req.result||null); req.onerror=()=>rej(req.error); }); },
+  del(store, key){ return new Promise((res,rej)=>{ const tx=this.db.transaction(store,'readwrite'); tx.objectStore(store).delete(key); tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); }); },
+  list(store){ return new Promise((res,rej)=>{ const tx=this.db.transaction(store,'readonly'); const os=tx.objectStore(store); const out=[]; os.openCursor().onsuccess=e=>{ const c=e.target.result; if(c){ out.push(c.key); c.continue(); } else res(out.sort()); }; tx.onerror=()=>rej(tx.error); }); }
+};
+awaitInit();
+async function awaitInit(){
+  await IDB.open();
+  // Load system volume (persisted)
+  const v = await getSetting('sysvol');
+  if(v!=null){ const n=parseFloat(v); if(!Number.isNaN(n)) SYS.volume=n; }
+  await applySettings();
+  initClockFaces();
+  renderPins();
+  buildStartMenu();
+  initTray();
+  requireAuth();
+  // Run self-tests once UI is ready
+  runSelfTests().catch(e=>console.error('Self-tests failed', e));
+}
+
+// FS helpers
+async function fsWrite(path, content){ await IDB.put('files', {path, content, ts: Date.now()}); toast('Saved '+path); }
+async function fsRead(path){ const r = await IDB.get('files', path); return r? r.content : null; }
+async function fsDelete(path){ await IDB.del('files', path); toast('Deleted '+path); }
+async function fsList(){ return await IDB.list('files'); }
+
+// Settings helpers
+async function setSetting(key, value){ await IDB.put('settings', {key, value}); if(key.startsWith('theme')||key==='wallpaper'||key==='wallFit') applySettings(); }
+async function getSetting(key){ const r = await IDB.get('settings', key); return r? r.value : null; }
+
+async function applySettings(){
+  const theme = await getSetting('theme') || 'dark';
+  const wall = await getSetting('wallpaper');
+  const fit = await getSetting('wallFit') || 'cover';
+  if(theme==='light'){
+    document.documentElement.style.setProperty('--fg','#0b1220');
+    document.documentElement.style.setProperty('--fg-dim','#334155');
+    document.documentElement.style.setProperty('--taskbar','rgba(240,242,247,.9)');
+  } else {
+    document.documentElement.style.setProperty('--fg','#e5e7eb');
+    document.documentElement.style.setProperty('--fg-dim','#cbd5e1');
+    document.documentElement.style.setProperty('--taskbar','rgba(20,22,34,.92)');
+  }
+  const url = wall || DEFAULT_WALL;
+  document.body.style.background = `url('${url}') center/${fit} fixed, linear-gradient(160deg,#0a0f1e,#060914 60%)`;
+}
+
+// ---------- Window Manager ----------
+function bringToFront(win){ win.style.zIndex = ++zTop; document.querySelectorAll('.task-btn').forEach(b=>b.classList.remove('active')); const id=win.dataset.id; const btn=document.querySelector(`.task-btn[data-id="${id}"]`); if(btn) btn.classList.add('active'); }
+function addTaskButton(id,title){ const b=document.createElement('button'); b.className='task-btn active'; b.dataset.id=id; b.innerHTML=`<span style="width:10px;height:10px;border-radius:50%;background:var(--accent);display:inline-block"></span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"> ${title}</span>`; b.onclick=()=> toggleMinimize(id); tasks.appendChild(b); }
+function toggleMinimize(id){ const w=windows.get(id); if(!w) return; const hidden=w.classList.toggle('hidden'); const btn=document.querySelector(`.task-btn[data-id="${id}"]`); if(btn) btn.classList.toggle('active',!hidden); if(!hidden) bringToFront(w); }
+function closeWindow(id){ const w=windows.get(id); if(!w) return; w.remove(); windows.delete(id); const btn=document.querySelector(`.task-btn[data-id="${id}"]`); if(btn) btn.remove(); }
+function maximizeWindow(win){ if(win.dataset.max==='1'){ const r=JSON.parse(win.dataset.restore); Object.assign(win.style,{left:r.left, top:r.top, width:r.width, height:r.height}); win.dataset.max='0'; } else { win.dataset.restore = JSON.stringify({left:win.style.left, top:win.style.top, width:win.style.width, height:win.style.height}); Object.assign(win.style,{left:'10px', top:'10px', width:(innerWidth-20)+'px', height:(innerHeight-taskbarHeight-20)+'px'}); win.dataset.max='1'; } }
+
+function createWindow({id,title,width=720,height=480,left=120,top=100,html}){ if(windows.has(id)){ const w=windows.get(id); bringToFront(w); return w; } const win=document.createElement('div'); win.className='window'; win.dataset.id=id; win.dataset.max='0'; Object.assign(win.style,{left:left+'px', top:top+'px', width:width+'px', height:height+'px'}); win.innerHTML=`<div class="titlebar"><div class="title"><span class="dot"></span><span>${title}</span></div><div class="buttons"><button class="min" title="Minimize">${ico('min')}</button><button class="max" title="Maximize">${ico('max')}</button><button class="close" title="Close">${ico('close')}</button></div></div><div class="content">${html}</div>`; desktop.appendChild(win); windows.set(id,win); addTaskButton(id,title); makeDraggable(win); bringToFront(win); win.querySelector('.min').onclick=()=>toggleMinimize(id); win.querySelector('.max').onclick=()=>maximizeWindow(win); win.querySelector('.close').onclick=()=>closeWindow(id); return win; }
+
+function makeDraggable(win){ const bar=win.querySelector('.titlebar'); let dragging=false, sx=0, sy=0, ox=0, oy=0; bar.addEventListener('mousedown',e=>{ if(e.target.closest('button')) return; dragging=true; sx=e.clientX; sy=e.clientY; const r=win.getBoundingClientRect(); ox=r.left; oy=r.top; bringToFront(win); }); addEventListener('mousemove',e=>{ if(!dragging) return; const nx = ox + (e.clientX-sx); const ny = oy + (e.clientY-sy); Object.assign(win.style,{left:Math.max(0, Math.min(innerWidth-120, nx))+'px', top:Math.max(0, Math.min(innerHeight-taskbarHeight-60, ny))+'px'}); }); addEventListener('mouseup',e=>{ if(!dragging) return; dragging=false; // snap
+  const rect=win.getBoundingClientRect(); if(rect.top<8){ maximizeWindow(win); return; } if(rect.left<8){ Object.assign(win.style,{left:'0px', top:'0px', width:(innerWidth/2)+'px', height:(innerHeight-taskbarHeight)+'px'}); return; } if(innerWidth-rect.right<8){ Object.assign(win.style,{left:(innerWidth/2)+'px', top:'0px', width:(innerWidth/2)+'px', height:(innerHeight-taskbarHeight)+'px'}); return; } }); }
+
+// ---------- Icons (inline SVG) ----------
+function ico(name){ switch(name){
+  case 'min': return '<svg viewBox="0 0 10.2 1"><rect x="0" y="50%" width="10.2" height="1"/></svg>';
+  case 'max': return '<svg viewBox="0 0 10 10"><path d="M0,0v10h10V0H0z M9,9H1V1h8V9z"/></svg>';
+  case 'close': return '<svg viewBox="0 0 10 10"><polygon points="10.2,0.7 9.5,0 5.1,4.4 0.7,0 0,0.7 4.4,5.1 0,9.5 0.7,10.2 5.1,5.8 9.5,10.2 10.2,9.5 5.8,5.1"/></svg>';
+  case 'folder': return '<svg viewBox="0 0 24 24"><path d="M10 4l2 2h8a2 2 0 0 1 2 2v9a3 3 0 0 1-3 3H5a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h5z"/></svg>';
+  case 'note': return '<svg viewBox="0 0 24 24"><path d="M6 2h9l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm8 0v6h6"/></svg>';
+  case 'calc': return '<svg viewBox="0 0 24 24"><path d="M6 2h12a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm2 4h8v4H8V6zm0 6h2v2H8v-2zm0 4h2v2H8v-2zm4-4h2v2h-2v-2zm0 4h2v2h-2v-2zm4-4h2v2h-2v-2z"/></svg>';
+  case 'media': return '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7-11-7z"/></svg>';
+  case 'term': return '<svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z M6 7l4 4-4 4m6 2h6"/></svg>';
+  case 'gear': return '<svg viewBox="0 0 24 24"><path d="M12 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8zm9 4l-2.1.3a7 7 0 0 0-.7 1.7l1.2 1.8-1.4 1.4-1.8-1.2a7 7 0 0 0-1.7.7L12 21l-1-2.1a7 7 0 0 0-1.7-.7l-1.8 1.2-1.4-1.4 1.2-1.8a7 7 0 0 0-.7-1.7L3 12l2.1-.3a7 7 0 0 0 .7-1.7L4.6 8.2 6 6.8l1.8 1.2c.5-.3 1.1-.5 1.7-.7L12 3l1 2.1c.6.2 1.2.4 1.7.7L16.6 4.6 18 6l-1.2 1.8c.3.5.5 1.1.7 1.7L21 12z"/></svg>';
+  case 'search': return '<svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5z"/></svg>';
+  case 'wifi': return '<svg viewBox="0 0 24 24"><path d="M12 20a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm-7-7a11 11 0 0 1 14 0l-1.6 1.6a8.5 8.5 0 0 0-10.8 0L5 13zm-3-3a16 16 0 0 1 20 0l-1.6 1.6a13.5 13.5 0 0 0-16.8 0L2 10z"/></svg>';
+  case 'vol': return '<svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 4V5L7 9H3zM14 12a3 3 0 0 0-1-2.24v4.48A3 3 0 0 0 14 12zm2 0a5 5 0 0 0-2-4v8a5 5 0 0 0 2-4z"/></svg>';
+  case 'bat': return '<svg viewBox="0 0 24 24"><path d="M16 7V5h2v2h1a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-1v2h-2v-2H5a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h11z"/></svg>';
+  case 'lock': return '<svg viewBox="0 0 24 24"><path d="M12 2a5 5 0 0 1 5 5v3h1a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h1V7a5 5 0 0 1 5-5zm3 8V7a3 3 0 1 0-6 0v3h6z"/></svg>';
+  default: return '<svg/>';
+}}
+
+// ---------- Apps ----------
+function launchTerminal(){ const url='https://sshx.io/s/oJsQ5dzdND#JT3wKOC2hs2DPO'; const w=window.open(url,'_blank','noopener'); if(!w) alert('Popup blocked. Allow popups to open Terminal.'); }
+
+function launchNotepad(){ const html=`<div class="toolbar"><input id="npPath" placeholder="/notes/untitled.txt"/><button id="npOpen">Open</button><button id="npOpenFile">Open File</button><button id="npSave">Save</button><button id="npDownload">Download</button></div><textarea id="npEditor" class="notepad-text" spellcheck="false"></textarea>`; const win=createWindow({id:'notepad', title:'Notepad', width:900, height:600, left:140, top:90, html}); const path=win.querySelector('#npPath'); const ed=win.querySelector('#npEditor'); win.querySelector('#npOpen').onclick=async()=>{ const t=await fsRead((path.value||'').trim()); ed.value = t||''; }; const up=document.createElement('input'); up.type='file'; up.style.display='none'; win.appendChild(up); win.querySelector('#npOpenFile').onclick=()=>up.click(); up.addEventListener('change',()=>{ const f=up.files[0]; if(!f) return; path.value = '/' + f.name; const r=new FileReader(); r.onload=()=>{ ed.value=r.result||''; }; r.readAsText(f); }); win.querySelector('#npSave').onclick=async()=>{ const p=(path.value||'/untitled.txt').trim(); try{ await fsWrite(p, ed.value); }catch(e){ alert('Save failed.'); } }; win.querySelector('#npDownload').onclick=()=>{ const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([ed.value],{type:'text/plain'})); a.download=(path.value||'note.txt').split('/').pop(); a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),0); }; }
+
+function launchFiles(){ const html=`<div class="toolbar"><input id="fp" placeholder="/notes/todo.txt"/><button id="new">New</button><button id="save">Save</button><button id="del">Delete</button><button id="dl">Download</button><input id="up" type="file" style="display:none"/><button id="upload">Upload</button></div><div style="display:flex;height:calc(100% - 48px)"><div style="width:45%;border-right:1px solid var(--border)" class="files-list" id="fl"></div><textarea id="fe" class="notepad-text" spellcheck="false"></textarea></div>`; const win=createWindow({id:'files', title:'Files', width:1000, height:620, left:120, top:70, html}); const fl=win.querySelector('#fl'); const fe=win.querySelector('#fe'); const fp=win.querySelector('#fp'); async function refresh(){ const items=await fsList(); fl.innerHTML = items.length? items.map(p=>`<div class="file-row"><span>${p}</span><span><button data-open="${p}">Open</button></span></div>`).join('') : '<div style="opacity:.7">No files yet</div>'; fl.querySelectorAll('[data-open]').forEach(b=> b.onclick=async()=>{ fp.value=b.dataset.open; fe.value = await fsRead(fp.value)||''; }); } refresh(); win.querySelector('#new').onclick=()=>{ fp.value='/untitled.txt'; fe.value=''; }; win.querySelector('#save').onclick=async()=>{ if(!fp.value) return alert('Set a path'); await fsWrite(fp.value, fe.value); refresh(); }; win.querySelector('#del').onclick=async()=>{ if(!fp.value) return; await fsDelete(fp.value); fe.value=''; refresh(); }; win.querySelector('#dl').onclick=()=>{ const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([fe.value],{type:'text/plain'})); a.download=(fp.value||'download.txt').split('/').pop(); a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),0); }; const up=win.querySelector('#up'); win.querySelector('#upload').onclick=()=> up.click(); up.addEventListener('change', ()=>{ const f=up.files[0]; if(!f) return; const r=new FileReader(); r.onload=async()=>{ const p='/'+f.name; await fsWrite(p, r.result||''); fp.value=p; fe.value=r.result||''; refresh(); }; r.readAsText(f); }); }
+
+function launchMedia(){ const html=`<div class="toolbar"><input id="mu" placeholder="Paste video/audio URL or choose a file"/><button id="mopen">Open URL</button><input id="mf" type="file" accept="video/*,audio/*" style="display:none"/><button id="mfile">Open File</button></div><video id="player" class="app-iframe" controls playsinline preload="metadata" style="background:#000;object-fit:contain"></video>`; const win=createWindow({id:'media', title:'Media Player', width:1100, height:680, left:160, top:60, html}); const p=win.querySelector('#player'); p.volume = (SYS.volume||1); const url=win.querySelector('#mu'); win.querySelector('#mopen').onclick=()=>{ const u=(url.value||'').trim(); if(!u) return; p.src=u; p.play().catch(()=>{}); }; const fi=win.querySelector('#mf'); win.querySelector('#mfile').onclick=()=> fi.click(); fi.addEventListener('change', ()=>{ const f=fi.files[0]; if(!f) return; const u=URL.createObjectURL(f); p.src=u; p.play().catch(()=>{}); p.onended=()=> URL.revokeObjectURL(u); }); p.addEventListener('error', ()=> alert('Cannot play this source (CORS or unsupported). Download then "Open File".')); }
+
+function launchCalculator(){ const keys=['7','8','9','/','4','5','6','*','1','2','3','-','0','.','=','+']; const ops=['/','*','-','+','=']; const grid=keys.map(k=>`<button class="${ops.includes(k)?'op':''}" data-k="${k}">${k}</button>`).join(''); const html=`<div class="toolbar"><div id="cd" class="notepad-text" style="height:auto;min-height:42px;white-space:normal;text-align:right;font-size:18px">0</div></div><div style="padding:12px;display:grid;grid-template-columns:repeat(4,1fr);gap:8px">${grid}<button data-k="C" class="op" style="grid-column:1/-1">Clear</button></div>`; const win=createWindow({id:'calc', title:'Calculator', width:320, height:380, left:420, top:120, html}); const disp=win.querySelector('#cd'); let cur='0'; function setv(v){ cur=v; disp.textContent=v; } win.querySelectorAll('[data-k]').forEach(b=> b.onclick=()=>{ const k=b.dataset.k; if(k==='C') return setv('0'); if(k==='='){ try{ setv(String(Function('return ('+cur+')')())); }catch{ setv('Error'); } return; } if(cur==='0' && /[0-9\.]/.test(k)) setv(k); else setv(cur+k); }); }
+
+function launchSettings(){ const html=`<div class="toolbar"><input id="wall" placeholder="Wallpaper URL (leave empty for gradient)"/><select id="fit"><option value="cover">Cover</option><option value="contain">Contain</option></select><select id="theme"><option value="dark">Dark</option><option value="light">Light</option></select><button id="save">Save</button></div><div style="padding:10px;opacity:.8">Tip: settings persist in IndexedDB. Right‑click the clock for a calendar. Drag windows to the edges to snap.</div>`; const win=createWindow({id:'settings', title:'Settings', width:700, height:300, left:300, top:120, html}); (async()=>{ win.querySelector('#wall').value = (await getSetting('wallpaper'))||''; win.querySelector('#fit').value = (await getSetting('wallFit'))||'cover'; win.querySelector('#theme').value = (await getSetting('theme'))||'dark'; })(); win.querySelector('#save').onclick=async()=>{ await setSetting('wallpaper', win.querySelector('#wall').value.trim()); await setSetting('wallFit', win.querySelector('#fit').value); await setSetting('theme', win.querySelector('#theme').value); toast('Settings saved'); }; }
+
+function launchSearch(){ const html=`<div class="toolbar searchbar"><input id="q" placeholder="Search apps & files"/><button id="run">Search</button></div><div id="out" style="padding:10px;overflow:auto;height:calc(100% - 48px)"><div style="opacity:.7">Type to search…</div></div>`; const win=createWindow({id:'search', title:'Search', width:560, height:420, left:520, top:120, html}); const q=win.querySelector('#q'); const out=win.querySelector('#out'); function apps(){ return [{name:'Terminal',key:'terminal'},{name:'Files',key:'files'},{name:'Notepad',key:'notepad'},{name:'Media',key:'media'},{name:'Calculator',key:'calc'},{name:'Settings',key:'settings'}]; } async function doSearch(term){ term=(term||'').toLowerCase(); const a=apps().filter(x=>x.name.toLowerCase().includes(term)); const files=(await fsList()).filter(p=>p.toLowerCase().includes(term)); let html=''; if(a.length){ html+='<div style="opacity:.7;margin-bottom:6px">Apps</div>'+a.map(x=>`<div class="file-row" data-app="${x.key}">${x.name}</div>`).join(''); } if(files.length){ html+='<div style="opacity:.7;margin:10px 0 6px">Files</div>'+files.map(f=>`<div class="file-row" data-open="${f}">${f}</div>`).join(''); } if(!html) html='<div style="opacity:.7">No results</div>'; out.innerHTML = html; out.querySelectorAll('[data-app]').forEach(el=> el.onclick=()=> launchApp(el.dataset.app)); out.querySelectorAll('[data-open]').forEach(el=> el.onclick=async()=>{ launchFiles(); setTimeout(async()=>{ const w=windows.get('files'); if(!w) return; w.querySelector('#fp').value=el.dataset.open; w.querySelector('#fe').value = await fsRead(el.dataset.open)||''; },120); }); }
+  win.querySelector('#run').onclick=()=> doSearch(q.value); q.addEventListener('input', ()=> doSearch(q.value)); q.focus(); }
+
+function launchRun(){ const html=`<div class="toolbar"><input id="cmd" placeholder="Type app name (notepad, files, media, calc, settings, terminal)"/><button id="go">Run</button></div><div style="padding:10px;opacity:.8">Press Enter to run.</div>`; const win=createWindow({id:'run', title:'Run', width:520, height:180, left:380, top:200, html}); const cmd=win.querySelector('#cmd'); function go(){ const m={notepad:launchNotepad, files:launchFiles, media:launchMedia, calc:launchCalculator, settings:launchSettings, terminal:launchTerminal, search:launchSearch}; const key=(cmd.value||'').trim().toLowerCase(); if(m[key]) m[key](); else toast('Command not found'); } win.querySelector('#go').onclick=go; cmd.addEventListener('keydown',e=>{ if(e.key==='Enter') go(); }); cmd.focus(); }
+
+// Map names to launchers
+function launchApp(name){ ({terminal:launchTerminal, files:launchFiles, notepad:launchNotepad, media:launchMedia, calc:launchCalculator, settings:launchSettings, search:launchSearch, run:launchRun, lock:lockSystem}[name]||(()=>toast('App not found')))(); }
+
+// ---------- Start menu ----------
+function buildStartMenu(){ const apps=[['terminal','Terminal',ico('term')],['files','Files',ico('folder')],['notepad','Notepad',ico('note')],['media','Media',ico('media')],['calc','Calculator',ico('calc')],['settings','Settings',ico('gear')],['search','Search',ico('search')],['run','Run',ico('term')],['lock','Lock',ico('lock')]]; startMenu.innerHTML = `<div class="grid">${apps.map(([k,n,svg])=>`<div class="app-icon" data-app="${k}">${svg}<span>${n}</span></div>`).join('')}</div>`; startMenu.querySelectorAll('[data-app]').forEach(el=> el.onclick=()=>{ launchApp(el.dataset.app); startMenu.style.display='none'; }); }
+startBtn.onclick = ()=>{ const open = !(startMenu.style.display==='block'); startMenu.style.display = open ? 'block' : 'none'; startBtn.classList.toggle('active', open); };
+addEventListener('mousedown', e=>{ if(!startMenu.contains(e.target) && e.target!==startBtn){ startMenu.style.display='none'; startBtn.classList.remove('active'); } });
+
+// ---------- Pins ----------
+const PINS_KEY='pins';
+async function pinsLoad(){ const r=await getSetting(PINS_KEY); return Array.isArray(r)?r:[]; }
+async function pinsSave(a){ await setSetting(PINS_KEY, a); renderPins(); }
+async function renderPins(){ pinsRow.innerHTML=''; const a=await pinsLoad(); a.forEach(k=>{ const b=document.createElement('button'); b.className='pin-btn'; b.title=k; b.innerHTML=ico(k==='files'?'folder': k==='notepad'?'note': k==='calc'?'calc': k==='media'?'media': k==='settings'?'gear': k==='terminal'?'term':'search'); b.onclick=()=> launchApp(k); pinsRow.appendChild(b); }); }
+
+// Pin shortcuts: long-press on task button to pin, context menu to unpin (basic)
+addEventListener('contextmenu', async (e)=>{ const btn=e.target.closest('.task-btn'); if(!btn) return; e.preventDefault(); /* reserved for future */ });
+
+// ---------- Taskbar search box (open Search app) ----------
+const taskSearchBox = document.getElementById('task-search'); const taskInput=document.getElementById('taskSearchInput'); taskSearchBox.addEventListener('click',()=> launchSearch()); taskInput.addEventListener('keydown',e=>{ if(e.key==='Enter'){ launchSearch(); setTimeout(()=>{ const sWin=windows.get('search'); if(!sWin) return; sWin.querySelector('#q').value = taskInput.value; sWin.querySelector('#run').click(); },120); } });
+
+// ---------- Tray: right-click calendar ----------
+const trayPopover = document.getElementById('trayPopover'); function openPopover(html){ trayPopover.innerHTML=html; trayPopover.style.display='block'; } function closePopover(){ trayPopover.style.display='none'; }
+addEventListener('click',e=>{ if(!trayPopover.contains(e.target) && e.target.id!=='clock') closePopover(); }); document.getElementById('clock').addEventListener('contextmenu', e=>{ e.preventDefault(); const now=new Date(); openPopover(`<h4>${now.toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric',year:'numeric'})}</h4>${renderCalendar(now)}`); });
+function renderCalendar(d){ const y=d.getFullYear(), m=d.getMonth(); const first=new Date(y,m,1); const last=new Date(y,m+1,0); const start=(first.getDay()+6)%7; const days=last.getDate(); const names=['Mon','Tue','Wed','Thu','Fri','Sat','Sun']; let html = `<div class="calendar">${names.map(n=>`<div class="day">${n}</div>`).join('')}`; for(let i=0;i<start;i++) html += `<div></div>`; for(let dd=1; dd<=days; dd++){ const isToday= dd===new Date().getDate() && m===new Date().getMonth() && y===new Date().getFullYear(); html += `<div class="cell ${isToday?'today':''}">${dd}</div>`; } return html + '</div>'; }
+
+// ---------- Tray flyouts (Wi‑Fi, Volume, Battery) ----------
+function initTray(){
+  const w=document.getElementById('tray-wifi');
+  const v=document.getElementById('tray-volume');
+  const b=document.getElementById('tray-battery');
+  if(w) w.innerHTML = ico('wifi');
+  if(v) v.innerHTML = ico('vol');
+  if(b) b.innerHTML = ico('bat');
+  if(w) w.onclick = ()=> openWifiFlyout();
+  if(v) v.onclick = ()=> openVolumeFlyout();
+  if(b) b.onclick = ()=> openBatteryFlyout();
+  addEventListener('online', ()=>{ toast('Network: online'); });
+  addEventListener('offline', ()=>{ toast('Network: offline'); });
+}
+function applySystemVolume(){ document.querySelectorAll('video,audio').forEach(m=> m.volume = (SYS.volume||1)); }
+function openWifiFlyout(){ const s = navigator.onLine? 'Online' : 'Offline'; openPopover(`<h4>Network</h4><div style="display:flex;align-items:center;gap:8px">${ico('wifi')} <span>${s}</span></div><div style='margin-top:8px;opacity:.7'>This is a status indicator only.</div>`); }
+function openVolumeFlyout(){ const val = Math.round((SYS.volume||1)*100); openPopover(`<h4>Volume</h4><input id='volRange' type='range' min='0' max='100' value='${val}' style='width:240px'>`); const r=document.getElementById('volRange'); r.oninput = async ()=>{ SYS.volume = (parseInt(r.value,10)||0)/100; applySystemVolume(); await setSetting('sysvol', SYS.volume); }; }
+async function openBatteryFlyout(){ let html = '<h4>Battery</h4><div>Not supported</div>'; try{ if(navigator.getBattery){ const bat = await navigator.getBattery(); html = `<h4>Battery</h4><div>${Math.round(bat.level*100)}% ${bat.charging? '(Charging)':''}</div>`; } }catch(e){} openPopover(html); }
+
+// ---------- Keyboard shortcuts ----------
+addEventListener('keydown', (e)=>{
+  // Win+R (or Alt+R in browsers) opens Run
+  if((e.metaKey||e.ctrlKey) && e.key.toLowerCase()==='r' && !e.shiftKey){ e.preventDefault(); launchRun(); }
+});
+
+// ---------- Self-tests (lightweight) ----------
+async function runSelfTests(){
+  const results = [];
+  function assert(ok,msg){ results.push({ok,msg}); if(!ok) console.error('TEST FAIL:', msg); }
+  try { await applySettings(); assert(true, 'applySettings() runs'); } catch(e){ assert(false,'applySettings() threw: '+e); }
+  assert(typeof ico('min')==='string' && ico('min').includes('<svg'),'ico(min) returns svg');
+  // Calendar render sanity
+  assert(typeof renderCalendar(new Date())==='string','renderCalendar returns html');
+  // FS round-trip
+  try {
+    await fsWrite('/__test.txt','ok');
+    const t = await fsRead('/__test.txt');
+    assert(t==='ok','IndexedDB FS round-trip');
+    await fsDelete('/__test.txt');
+  } catch(e){ assert(false,'IDB FS error: '+e); }
+  // Window create/close
+  const w = createWindow({id:'__t', title:'__Test', width:320, height:200, left:5, top:5, html:'<div>t</div>'});
+  assert(!!windows.get('__t'),'createWindow created');
+  closeWindow('__t');
+  assert(!windows.get('__t'),'closeWindow removed');
+  // Report summary
+  const fails = results.filter(r=>!r.ok).length;
+  console.log(`Self-tests: ${results.length-fails}/${results.length} passed`, results);
+  if(fails) toast('Some self-tests failed. See console.');
+}
+
+// ---------- Auth / Sign-in ----------
+function toHex(buf){ return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join(''); }
+async function sha256(str){ if(window.crypto && crypto.subtle){ const enc=new TextEncoder().encode(str); const h=await crypto.subtle.digest('SHA-256', enc); return toHex(h); } else { let h=0; for(let i=0;i<str.length;i++){ h=(h<<5)-h+str.charCodeAt(i); h|=0; } return String(h>>>0); } }
+async function authLoad(){ const user=await getSetting(AUTH.userKey); const hash=await getSetting(AUTH.hashKey); const signed=await getSetting(AUTH.signedKey); return {user,hash,signed:!!signed}; }
+async function authSetSigned(s){ await setSetting(AUTH.signedKey, !!s); }
+async function authSave(user, hash){ await setSetting(AUTH.userKey, user); await setSetting(AUTH.hashKey, hash); }
+function authOverlay(show){ document.getElementById('authOverlay').style.display = show? 'block':'none'; }
+function initClockFaces(){ function update(){ const d=new Date(); const hh=String(d.getHours()).padStart(2,'0'); const mm=String(d.getMinutes()).padStart(2,'0'); const dateEl=document.getElementById('lockDate'); const timeEl=document.getElementById('lockTime'); if(timeEl) timeEl.textContent=`${hh}:${mm}`; if(dateEl) dateEl.textContent=d.toLocaleDateString(undefined,{weekday:'long', month:'long', day:'numeric', year:'numeric'}); } update(); setInterval(update, 30000); }
+async function requireAuth(){ const a=await authLoad(); if(!a.user || !a.hash){ showSignup(); } else if(!a.signed){ showSignin(a.user); } else { authOverlay(false); } }
+function hookAuthEnter(){ const u=document.getElementById('authUser'); const p=document.getElementById('authPass'); const primary=document.getElementById('authPrimary'); function h(e){ if(e.key==='Enter'){ primary.click(); } } if(u) u.onkeydown=h; if(p) p.onkeydown=h; }
+function setAuthUi(mode){ const title=document.getElementById('authTitle'); const alt=document.getElementById('authAlt'); const primary=document.getElementById('authPrimary'); const pass=document.getElementById('authPass'); const err=document.getElementById('authError'); if(err) err.textContent=''; if(mode==='signup'){ if(title) title.textContent='Create account'; if(primary) primary.textContent='Create'; if(alt) alt.textContent='Have an account? Sign in'; if(pass) pass.placeholder='New password'; } else { if(title) title.textContent='Sign in'; if(primary) primary.textContent='Sign in'; if(alt) alt.textContent='Create account'; if(pass) pass.placeholder='Password'; } hookAuthEnter(); }
+function showSignin(prefill){ authOverlay(true); setAuthUi('signin'); const u=document.getElementById('authUser'); if(u) u.value = prefill||''; bindSignin(); }
+function showSignup(){ authOverlay(true); setAuthUi('signup'); bindSignup(); }
+function bindSignup(){ const userEl=document.getElementById('authUser'); const passEl=document.getElementById('authPass'); const primary=document.getElementById('authPrimary'); const alt=document.getElementById('authAlt'); const reset=document.getElementById('authReset'); if(primary) primary.onclick = async ()=>{ const u=(userEl.value||'').trim(); const p=passEl.value||''; if(!u||!p){ return showAuthError('Enter username & password'); } const hash=await sha256(p); await authSave(u, hash); await authSetSigned(true); toast('Account created'); authOverlay(false); };
+  if(alt) alt.onclick = ()=> showSignin(userEl.value||''); if(reset) reset.onclick = resetOs; }
+function bindSignin(){ const userEl=document.getElementById('authUser'); const passEl=document.getElementById('authPass'); const primary=document.getElementById('authPrimary'); const alt=document.getElementById('authAlt'); const reset=document.getElementById('authReset'); if(primary) primary.onclick = async ()=>{ const u=(userEl.value||'').trim(); const p=passEl.value||''; const a=await authLoad(); if(!a.user){ return showSignup(); } if(u!==a.user){ return showAuthError('User not found'); } const hash=await sha256(p); if(hash!==a.hash){ return showAuthError('Incorrect password'); } await authSetSigned(true); toast('Signed in'); authOverlay(false); };
+  if(alt) alt.onclick = showSignup; if(reset) reset.onclick = resetOs; }
+function showAuthError(msg){ const el=document.getElementById('authError'); if(el) el.textContent = msg; }
+async function resetOs(){ if(!confirm('This will erase ALL files & settings. Continue?')) return; const req = indexedDB.deleteDatabase('webos.v5'); req.onsuccess = ()=> location.reload(); req.onerror = ()=> alert('Reset failed'); }
+function lockSystem(){ authSetSigned(false).then(()=> showSignin()); }
+// Add Lock to Start menu & Win+L
+addEventListener('keydown', (e)=>{ if((e.metaKey||e.ctrlKey) && e.key.toLowerCase()==='l'){ e.preventDefault(); lockSystem(); } });
+// Require auth at startup
+// moved into awaitInit() to ensure IDB is ready
+</script>
+</body>
+</html>
+</body>
+</html>
